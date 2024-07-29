@@ -1,0 +1,22 @@
+- name: Update apt and install Nginx
+  hosts: web
+  become: yes
+  tasks:
+    - name: update apt
+      apt:
+        update_cache: yes
+
+    - name: Upgrade apt
+      apt:
+        upgrade: dist
+
+    - name: Install Nginx web server
+      apt:
+        name: nginx
+        state: present
+
+    - name: Ensure Nginx is running and enabled
+      service:
+        name: nginx
+        state: started
+        enabled: yes

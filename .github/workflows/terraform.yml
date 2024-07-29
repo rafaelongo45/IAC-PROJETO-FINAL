@@ -1,0 +1,86 @@
+name: terraform ci
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  run-terraform:
+    name: "Run Terraform"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Install ansible
+        run: sudo apt-get update && sudo apt-get install -y ansible sshpass
+
+      - name: Run terraform init
+        run: terraform init
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID}}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET}}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID}}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID}}
+          TF_VAR_vm_password: ${{ secrets.TF_VAR_vm_admin_password }}
+
+      - name: Run terraform fmt
+        run: terraform fmt -check --diff
+
+      - name: Execute terraform linter
+        uses: terraform-linters/setup-tflint@v1
+
+      - name: Execute checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          soft_fail: true
+
+      - name: Run terraform plan
+        run: terraform plan
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID}}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET}}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID}}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID}}
+          TF_VAR_vm_password: ${{ secrets.VM_ADMIN_PASSWORD }}
+
+      - name: Run terraform apply
+        run: terraform apply -auto-approve
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID}}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET}}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID}}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID}}
+          TF_VAR_vm_password: ${{ secrets.VM_ADMIN_PASSWORD }}
+          
+      - name: Upload chave privada
+        uses: actions/upload-artifact@v3
+        with:
+          name: private_key.pem
+          path: private_key.pem
+
+      - name: Check if nginx is installed
+        id: check-nginx-installed
+        run: |
+          if command -v nginx &> /dev/null; then
+            echo "Nginx is installed"
+          else
+            echo "Nginx is not installed"
+            echo "::set-output name=nginx_installed::false"
+          fi
+
+      - name: Download chave privada
+        uses: actions/download-artifact@v3
+        with:
+          name: private_key.pem
+
+      - name: Execute ansible playbook
+        if: steps.check-nginx-installed.outputs.nginx_installed != 'false'
+        run: ansible-playbook -i ./ansible/inventory.ini ./ansible/playbook.yml
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: false
